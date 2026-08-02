@@ -7,21 +7,21 @@ enum ComposerTool {
   compact;
 
   String get label => switch (this) {
-        ComposerTool.goal => 'Goal',
-        ComposerTool.compact => 'Compact',
-      };
+    ComposerTool.goal => 'Goal',
+    ComposerTool.compact => 'Compact',
+  };
 
   IconData get icon => switch (this) {
-        ComposerTool.goal => Icons.flag_outlined,
-        ComposerTool.compact => Icons.compress,
-      };
+    ComposerTool.goal => Icons.flag_outlined,
+    ComposerTool.compact => Icons.compress,
+  };
 
   /// Whether this tool consumes the text field as its argument. `compact`
   /// takes no argument, so its input is disabled.
   bool get usesText => switch (this) {
-        ComposerTool.goal => true,
-        ComposerTool.compact => false,
-      };
+    ComposerTool.goal => true,
+    ComposerTool.compact => false,
+  };
 }
 
 /// Message composer: an optional tool toolbar, a marker for the staged tool,
@@ -105,43 +105,41 @@ class _ComposerState extends State<Composer> {
     final staged = _staged;
     return SafeArea(
       top: false,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _toolbar(context),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 2, 8, 6),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(child: _textField(staged)),
-                const SizedBox(width: 6),
-                _button(context),
-              ],
-            ),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            _toolMenu(),
+            const SizedBox(width: 4),
+            Expanded(child: _textField(staged)),
+            const SizedBox(width: 6),
+            _button(context),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _toolbar(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-        child: Wrap(
-          spacing: 8,
-          children: [
-            for (final tool in ComposerTool.values)
-              _ToolButton(
-                tool: tool,
-                selected: _staged == tool,
-                onPressed: widget.enabled ? () => _toggleTool(tool) : null,
-              ),
-          ],
-        ),
-      ),
+  Widget _toolMenu() {
+    return PopupMenuButton<ComposerTool>(
+      tooltip: 'Composer tools',
+      enabled: widget.enabled,
+      icon: const Icon(Icons.add_circle_outline),
+      onSelected: _toggleTool,
+      itemBuilder: (context) => [
+        for (final tool in ComposerTool.values)
+          PopupMenuItem(
+            value: tool,
+            child: Row(
+              children: [
+                Icon(tool.icon, size: 18),
+                const SizedBox(width: 10),
+                Text(tool.label),
+              ],
+            ),
+          ),
+      ],
     );
   }
 
@@ -168,9 +166,7 @@ class _ComposerState extends State<Composer> {
         // field instead of a verbose marker banner above it.
         prefixIcon: staged == null ? null : _stagedPill(staged),
         prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(24),
-        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
           vertical: 10,
@@ -205,8 +201,11 @@ class _ComposerState extends State<Composer> {
             InkWell(
               onTap: () => setState(() => _staged = null),
               borderRadius: BorderRadius.circular(10),
-              child: Icon(Icons.close,
-                  size: 15, color: scheme.onSecondaryContainer),
+              child: Icon(
+                Icons.close,
+                size: 15,
+                color: scheme.onSecondaryContainer,
+              ),
             ),
           ],
         ),
@@ -229,38 +228,6 @@ class _ComposerState extends State<Composer> {
       icon: const Icon(Icons.arrow_upward),
       onPressed: _canSend ? _send : null,
       tooltip: 'Send',
-    );
-  }
-}
-
-class _ToolButton extends StatelessWidget {
-  const _ToolButton({
-    required this.tool,
-    required this.selected,
-    required this.onPressed,
-  });
-
-  final ComposerTool tool;
-  final bool selected;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return ActionChip(
-      avatar: Icon(
-        tool.icon,
-        size: 16,
-        color: selected ? scheme.onPrimary : scheme.onSurfaceVariant,
-      ),
-      label: Text('/${tool.label.toLowerCase()}'),
-      labelStyle: TextStyle(
-        fontSize: 12,
-        color: selected ? scheme.onPrimary : scheme.onSurfaceVariant,
-      ),
-      backgroundColor: selected ? scheme.primary : null,
-      visualDensity: VisualDensity.compact,
-      onPressed: onPressed,
     );
   }
 }
