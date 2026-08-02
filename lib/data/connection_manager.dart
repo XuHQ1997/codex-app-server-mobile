@@ -107,6 +107,8 @@ class ConnectionManager {
   RpcClient? _client;
   WsTransport? _transport;
   StreamSubscription<void>? _doneSub;
+  Timer? _reconnectTimer;
+  bool _attempting = false;
   bool _manualClose = false;
 
   Stream<ConnectionState> get states => _stateController.stream;
@@ -126,12 +128,15 @@ class ConnectionManager {
   /// Connects to [profile] and performs the initialize/initialized handshake.
   Future<void> connect(ServerProfile profile) async {
     _manualClose = false;
+    _reconnectTimer?.cancel();
     await _teardown();
     _backoff.reset();
     await _attempt(profile);
   }
 
   Future<void> _attempt(ServerProfile profile) async {
+    if (_attempting) return;
+    _attempting = true;
     _setState(
       _state.copyWith(status: ConnectionStatus.connecting, profile: profile),
     );
@@ -174,6 +179,8 @@ class ConnectionManager {
       if (!_manualClose) {
         _scheduleReconnect(profile);
       }
+    } finally {
+      _attempting = false;
     }
   }
 
@@ -188,28 +195,38 @@ class ConnectionManager {
 
   void _scheduleReconnect(ServerProfile profile) {
     if (_manualClose) return;
+    _reconnectTimer?.cancel();
     final delay = _backoff.next();
     _log.info(
       'Reconnecting in ${delay.inMilliseconds}ms '
       '(attempt ${_backoff.attempt})',
     );
-    Timer(delay, () {
+    _reconnectTimer = Timer(delay, () {
+      _reconnectTimer = null;
       if (_manualClose) return;
       _attempt(profile);
     });
   }
 
-  /// Forces an immediate reconnect (e.g. on network change / app resume).
-  void reconnectNow() {
+  /// Forces an immediate reconnect. With [force], also replaces a connection
+  /// that still reports ready; mobile OSes can silently invalidate a socket
+  /// while the app is suspended before its close event reaches Dart.
+  Future<void> reconnectNow({bool force = false}) async {
     final profile = _state.profile;
     if (profile == null || _manualClose) return;
-    if (_state.status == ConnectionStatus.ready) return;
+    if (_attempting) return;
+    if (_state.status == ConnectionStatus.ready && !force) return;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     _backoff.reset();
-    _attempt(profile);
+    await _teardown();
+    await _attempt(profile);
   }
 
   Future<void> disconnect() async {
     _manualClose = true;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     await _teardown();
     _setState(const ConnectionState(status: ConnectionStatus.disconnected));
   }
@@ -225,6 +242,7 @@ class ConnectionManager {
 
   Future<void> dispose() async {
     _manualClose = true;
+    _reconnectTimer?.cancel();
     await _teardown();
     await _stateController.close();
     await _readyController.close();

@@ -56,8 +56,11 @@ class _LifecycleWatcherState extends ConsumerState<LifecycleWatcher>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _log.info('App resumed; trying reconnect');
-      _reconnectIfNeeded();
+      _log.info('App resumed; refreshing connection');
+      final manager = ref.read(connectionManagerProvider);
+      if (manager.state.status != ConnectionStatus.disconnected) {
+        manager.reconnectNow(force: true);
+      }
     }
   }
 
