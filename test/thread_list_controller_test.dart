@@ -39,5 +39,38 @@ void main() {
       await client.dispose();
       await transport.close();
     });
+
+    test('groups by cwd while retaining recency order', () async {
+      final transport = FakeTransport()
+        ..autoResponder = (out) {
+          final result = {
+            'data': [
+              {'id': 'a-old', 'cwd': '/work/a', 'updatedAt': 1000},
+              {'id': 'b-new', 'cwd': '/work/b', 'updatedAt': 4000},
+              {'id': 'a-new', 'cwd': '/work/a', 'updatedAt': 3000},
+              {'id': 'unknown', 'updatedAt': 2000},
+            ],
+            'nextCursor': null,
+          };
+          return jsonEncode({'id': out['id'], 'result': result});
+        };
+      final client = RpcClient(transport: transport)..start();
+      final controller = ThreadListController(CodexService(client));
+
+      await controller.refresh();
+
+      expect(controller.directoryGroups.map((group) => group.cwd), [
+        '/work/b',
+        '/work/a',
+        null,
+      ]);
+      expect(controller.directoryGroups[1].threads.map((thread) => thread.id), [
+        'a-new',
+        'a-old',
+      ]);
+
+      await client.dispose();
+      await transport.close();
+    });
   });
 }

@@ -3,6 +3,16 @@ import 'package:flutter/foundation.dart';
 import '../data/codex_service.dart';
 import '../protocol/thread.dart';
 
+/// A directory section in the thread list. Sections and their threads are
+/// ordered by latest activity because they are derived from [threads] after
+/// its recency sort.
+class ThreadDirectoryGroup {
+  const ThreadDirectoryGroup({required this.cwd, required this.threads});
+
+  final String? cwd;
+  final List<ThreadSummary> threads;
+}
+
 /// Paginated thread list state.
 class ThreadListController extends ChangeNotifier {
   ThreadListController(this._service);
@@ -16,6 +26,22 @@ class ThreadListController extends ChangeNotifier {
   String? _error;
 
   List<ThreadSummary> get threads => List.unmodifiable(_threads);
+  List<ThreadDirectoryGroup> get directoryGroups {
+    final grouped = <String?, List<ThreadSummary>>{};
+    for (final thread in _threads) {
+      final trimmed = thread.cwd?.trim();
+      final cwd = trimmed == null || trimmed.isEmpty ? null : trimmed;
+      grouped.putIfAbsent(cwd, () => []).add(thread);
+    }
+    return [
+      for (final entry in grouped.entries)
+        ThreadDirectoryGroup(
+          cwd: entry.key,
+          threads: List.unmodifiable(entry.value),
+        ),
+    ];
+  }
+
   bool get loading => _loading;
   bool get hasMore => _hasMore;
   String? get error => _error;

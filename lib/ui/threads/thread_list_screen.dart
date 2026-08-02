@@ -12,12 +12,12 @@ import '../common/connection_banner.dart';
 /// Provider for the thread list controller, bound to the active service.
 final threadListControllerProvider =
     ChangeNotifierProvider.autoDispose<ThreadListController>((ref) {
-  final service = ref.watch(codexServiceProvider);
-  final controller = ThreadListController(service!);
-  // Kick off the initial load.
-  Future.microtask(controller.refresh);
-  return controller;
-});
+      final service = ref.watch(codexServiceProvider);
+      final controller = ThreadListController(service!);
+      // Kick off the initial load.
+      Future.microtask(controller.refresh);
+      return controller;
+    });
 
 class ThreadListScreen extends ConsumerWidget {
   const ThreadListScreen({super.key});
@@ -75,60 +75,70 @@ class ThreadListScreen extends ConsumerWidget {
     if (controller.threads.isEmpty) {
       return const Center(child: Text('No threads yet. Start a new chat.'));
     }
+    final rows = <Widget>[
+      for (final group in controller.directoryGroups) ...[
+        _DirectoryHeader(cwd: group.cwd, count: group.threads.length),
+        for (final thread in group.threads)
+          _threadTile(context, controller, thread),
+      ],
+      if (controller.hasMore) _LoadMore(onVisible: controller.loadMore),
+    ];
     return RefreshIndicator(
       onRefresh: controller.refresh,
-      child: ListView.separated(
-        itemCount: controller.threads.length + (controller.hasMore ? 1 : 0),
-        separatorBuilder: (context, index) => const Divider(height: 1),
-        itemBuilder: (context, i) {
-          if (i >= controller.threads.length) {
-            controller.loadMore();
-            return const Padding(
-              padding: EdgeInsets.all(16),
-              child: Center(child: CircularProgressIndicator()),
-            );
-          }
-          final thread = controller.threads[i];
-          return Dismissible(
-            key: ValueKey(thread.id),
-            direction: DismissDirection.endToStart,
-            background: Container(
-              color: Colors.red,
-              alignment: Alignment.centerRight,
-              padding: const EdgeInsets.only(right: 24),
-              child: const Icon(Icons.archive, color: Colors.white),
+      child: ListView.builder(
+        itemCount: rows.length,
+        itemBuilder: (context, index) => rows[index],
+      ),
+    );
+  }
+
+  Widget _threadTile(
+    BuildContext context,
+    ThreadListController controller,
+    ThreadSummary thread,
+  ) {
+    return Dismissible(
+      key: ValueKey(thread.id),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        color: Colors.red,
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 24),
+        child: const Icon(Icons.archive, color: Colors.white),
+      ),
+      confirmDismiss: (_) => _confirmArchive(context),
+      onDismissed: (_) => controller.archive(thread.id),
+      child: Column(
+        children: [
+          ListTile(
+            title: Text(
+              thread.displayName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-            confirmDismiss: (_) => _confirmArchive(context),
-            onDismissed: (_) => controller.archive(thread.id),
-            child: ListTile(
-              title: Text(
-                thread.displayName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              subtitle: _subtitle(context, thread),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _StatusChip(status: thread.status),
-                  _ThreadMenu(
-                    onArchive: () async {
-                      if (await _confirmArchive(context) == true) {
-                        await controller.archive(thread.id);
-                      }
-                    },
-                    onDelete: () async {
-                      if (await _confirmDelete(context) == true) {
-                        await controller.delete(thread.id);
-                      }
-                    },
-                  ),
-                ],
-              ),
-              onTap: () => context.push('/chat/${thread.id}'),
+            subtitle: _subtitle(context, thread),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _StatusChip(status: thread.status),
+                _ThreadMenu(
+                  onArchive: () async {
+                    if (await _confirmArchive(context) == true) {
+                      await controller.archive(thread.id);
+                    }
+                  },
+                  onDelete: () async {
+                    if (await _confirmDelete(context) == true) {
+                      await controller.delete(thread.id);
+                    }
+                  },
+                ),
+              ],
             ),
-          );
-        },
+            onTap: () => context.push('/chat/${thread.id}'),
+          ),
+          const Divider(height: 1),
+        ],
       ),
     );
   }
@@ -184,7 +194,8 @@ class ThreadListScreen extends ConsumerWidget {
   Widget? _subtitle(BuildContext context, ThreadSummary thread) {
     final parts = <String>[
       if (thread.cwd != null && thread.cwd!.isNotEmpty) basenameOf(thread.cwd!),
-      if (_relativeTime(thread.updatedAtMs) != null) _relativeTime(thread.updatedAtMs)!,
+      if (_relativeTime(thread.updatedAtMs) != null)
+        _relativeTime(thread.updatedAtMs)!,
     ];
     if (parts.isEmpty) return null;
     return Text(
@@ -215,18 +226,74 @@ class ThreadListScreen extends ConsumerWidget {
     try {
       final result = await service.startThread();
       final thread = result['thread'];
-      final threadId = thread is Map<String, dynamic> ? thread['id'] as String? : null;
+      final threadId = thread is Map<String, dynamic>
+          ? thread['id'] as String?
+          : null;
       if (threadId != null && context.mounted) {
         context.push('/chat/$threadId');
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to start thread: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to start thread: $e')));
       }
     }
   }
+}
+
+class _DirectoryHeader extends StatelessWidget {
+  const _DirectoryHeader({required this.cwd, required this.count});
+
+  final String? cwd;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      color: scheme.surfaceContainerLow,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Row(
+        children: [
+          Icon(Icons.folder_outlined, size: 18, color: scheme.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              cwd ?? 'No working directory',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+          ),
+          Text('$count', style: Theme.of(context).textTheme.labelSmall),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadMore extends StatefulWidget {
+  const _LoadMore({required this.onVisible});
+
+  final VoidCallback onVisible;
+
+  @override
+  State<_LoadMore> createState() => _LoadMoreState();
+}
+
+class _LoadMoreState extends State<_LoadMore> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => widget.onVisible());
+  }
+
+  @override
+  Widget build(BuildContext context) => const Padding(
+    padding: EdgeInsets.all(16),
+    child: Center(child: CircularProgressIndicator()),
+  );
 }
 
 class _StatusChip extends StatelessWidget {
