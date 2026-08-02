@@ -4,7 +4,8 @@
 /// and the agent's interstitial "thinking out loud" text) tucked into one
 /// foldable group.
 ///
-/// Boundaries that always render standalone: user messages and plans. An
+/// Boundaries that always render standalone: user messages, plans, and context
+/// compaction markers. An
 /// agent message is standalone only when it is the *final* message of a segment
 /// (the turn's summary); earlier agent messages fold into the group as
 /// intermediate notes.
@@ -33,8 +34,8 @@ class ItemEntry extends TranscriptEntry {
 /// notes).
 class StepGroupEntry extends TranscriptEntry {
   StepGroupEntry(List<ThreadItem> items, {this.live = false})
-      : items = List.unmodifiable(items),
-        assert(items.isNotEmpty);
+    : items = List.unmodifiable(items),
+      assert(items.isNotEmpty);
 
   final List<ThreadItem> items;
 
@@ -68,27 +69,29 @@ class StepGroupEntry extends TranscriptEntry {
 /// Whether [item] is a step-like action (tool call, reasoning, search, …), as
 /// opposed to a message or plan. Used for counting/labeling group contents.
 bool isStepItem(ThreadItem item) => switch (item) {
-      UserMessageItem _ => false,
-      AgentMessageItem _ => false,
-      PlanItem _ => false,
-      _ => true,
-    };
+  UserMessageItem _ => false,
+  AgentMessageItem _ => false,
+  PlanItem _ => false,
+  _ => true,
+};
 
 /// Items that always render standalone and never fold into a group.
 bool _isBoundary(ThreadItem item) =>
-    item is UserMessageItem || item is PlanItem;
+    item is UserMessageItem ||
+    item is PlanItem ||
+    item is ContextCompactionItem;
 
 /// A short category label for [item], used in the group summary bar.
 String stepLabel(ThreadItem item) => switch (item) {
-      CommandExecutionItem _ => 'shell',
-      FileChangeItem _ => 'edit',
-      WebSearchItem _ => 'search',
-      ReasoningItem _ => 'thinking',
-      McpToolCallItem i => i.tool.isNotEmpty ? i.tool : 'mcp',
-      ReviewModeItem _ => 'review',
-      ContextCompactionItem _ => 'compact',
-      _ => 'step',
-    };
+  CommandExecutionItem _ => 'shell',
+  FileChangeItem _ => 'edit',
+  WebSearchItem _ => 'search',
+  ReasoningItem _ => 'thinking',
+  McpToolCallItem i => i.tool.isNotEmpty ? i.tool : 'mcp',
+  ReviewModeItem _ => 'review',
+  ContextCompactionItem _ => 'compact',
+  _ => 'step',
+};
 
 /// Groups each turn's intermediate items into a [StepGroupEntry]; user
 /// messages, plans, and the final agent message of each segment render as
