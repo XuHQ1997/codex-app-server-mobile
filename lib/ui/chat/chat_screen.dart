@@ -34,44 +34,47 @@ import 'transcript_grouping.dart';
 /// watches the connection providers.
 final threadSessionControllerProvider = ChangeNotifierProvider.autoDispose
     .family<ThreadSessionController, String>((ref, threadId) {
-  final service = ref.watch(codexServiceProvider);
-  final manager = ref.watch(connectionManagerProvider);
-  final client = manager.client;
-  if (service == null || client == null) {
-    throw StateError('Not connected');
-  }
-  ref.keepAlive();
-  final controller = ThreadSessionController(
-    threadId: threadId,
-    client: client,
-    service: service,
-  );
-  // Resume + hydrate history.
-  Future.microtask(() async {
-    try {
-      final result = await service.resumeThread(threadId);
-      controller.hydrateFromThread(result);
-      // `thread/resume` can return turns whose items weren't loaded
-      // (`itemsView: notLoaded`), so the transcript comes back empty. In that
-      // case pull the full history explicitly via `thread/read`.
-      if (!controller.hasItems) {
-        final full = await service.readThread(threadId, includeTurns: true);
-        controller.hydrateFromThread(full);
+      final service = ref.watch(codexServiceProvider);
+      final manager = ref.watch(connectionManagerProvider);
+      final client = manager.client;
+      if (service == null || client == null) {
+        throw StateError('Not connected');
       }
-    } catch (_) {
-      // If resume fails (e.g. mid-unload), fall back to read.
-      try {
-        final result = await service.readThread(threadId, includeTurns: true);
-        controller.hydrateFromThread(result);
-      } catch (_) {
-        // Both failed: mark hydrated anyway so the UI leaves the loading
-        // state instead of spinning forever.
-        controller.markHydrated();
-      }
-    }
-  });
-  return controller;
-});
+      ref.keepAlive();
+      final controller = ThreadSessionController(
+        threadId: threadId,
+        client: client,
+        service: service,
+      );
+      // Resume + hydrate history.
+      Future.microtask(() async {
+        try {
+          final result = await service.resumeThread(threadId);
+          controller.hydrateFromThread(result);
+          // `thread/resume` can return turns whose items weren't loaded
+          // (`itemsView: notLoaded`), so the transcript comes back empty. In that
+          // case pull the full history explicitly via `thread/read`.
+          if (!controller.hasItems) {
+            final full = await service.readThread(threadId, includeTurns: true);
+            controller.hydrateFromThread(full);
+          }
+        } catch (_) {
+          // If resume fails (e.g. mid-unload), fall back to read.
+          try {
+            final result = await service.readThread(
+              threadId,
+              includeTurns: true,
+            );
+            controller.hydrateFromThread(result);
+          } catch (_) {
+            // Both failed: mark hydrated anyway so the UI leaves the loading
+            // state instead of spinning forever.
+            controller.markHydrated();
+          }
+        }
+      });
+      return controller;
+    });
 
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({super.key, required this.threadId});
@@ -104,6 +107,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// re-pin to the bottom across a few frames until the extent stops growing.
   double _lastSettleExtent = -1;
   int _settleAttemptsLeft = 0;
+  int _stableSettleFrames = 0;
 
   /// Whether the viewport is currently pinned near the bottom. Drives both the
   /// auto-follow behavior and the visibility of the scroll-to-bottom button.
@@ -153,8 +157,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       return const Scaffold(body: Center(child: Text('Not connected')));
     }
 
-    final controller =
-        ref.watch(threadSessionControllerProvider(widget.threadId));
+    final controller = ref.watch(
+      threadSessionControllerProvider(widget.threadId),
+    );
     final sessionData = controller.session;
 
     // Present approvals as they arrive.
@@ -168,8 +173,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       _initialApprovalChecked = true;
       final approvals = ref.read(approvalControllerProvider);
       if (approvals != null && approvals.current != null) {
-        WidgetsBinding.instance
-            .addPostFrameCallback((_) => _maybeShowApproval(approvals));
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _maybeShowApproval(approvals),
+        );
       }
     }
 
@@ -333,9 +339,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Send failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Send failed: $e')));
       }
     }
   }
@@ -350,9 +356,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         case ComposerTool.goal:
           await service.setGoal(widget.threadId, objective: text);
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Goal set')),
-            );
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('Goal set')));
           }
         case ComposerTool.compact:
           await service.compactThread(widget.threadId);
@@ -364,9 +370,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${tool.label} failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('${tool.label} failed: $e')));
       }
     }
   }
@@ -426,8 +432,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       // If more approvals queued while closing, reopen.
       final next = ref.read(approvalControllerProvider);
       if (next != null && next.current != null && mounted) {
-        WidgetsBinding.instance
-            .addPostFrameCallback((_) => _maybeShowApproval(next));
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _maybeShowApproval(next),
+        );
       }
     });
   }
@@ -445,6 +452,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       _needsInitialScroll = false;
       _settleAttemptsLeft = 10;
       _lastSettleExtent = -1;
+      _stableSettleFrames = 0;
       _settleToBottom();
       return;
     }
@@ -469,8 +477,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _scrollController.jumpTo(extent);
     _atBottom = true;
     final stable = (extent - _lastSettleExtent).abs() < 1.0;
+    _stableSettleFrames = stable ? _stableSettleFrames + 1 : 0;
     _lastSettleExtent = extent;
-    if (stable || _settleAttemptsLeft-- <= 0) {
+    // Require several consecutive stable layouts. Markdown and nested step
+    // lists can report one unchanged extent before completing another layout
+    // pass; revealing on that first pause leaves the viewport above the real
+    // bottom and makes the jump button appear immediately on entry.
+    if (_stableSettleFrames >= 3 || _settleAttemptsLeft-- <= 0) {
       // Settled: reveal the now bottom-pinned transcript.
       if (!_transcriptReady) setState(() => _transcriptReady = true);
       return;
@@ -518,8 +531,9 @@ class _AppBarTitle extends StatelessWidget {
             subtitleParts.join('  ·  '),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
       ],
     );
