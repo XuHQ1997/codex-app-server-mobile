@@ -354,11 +354,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     try {
       switch (tool) {
         case ComposerTool.goal:
-          await service.setGoal(widget.threadId, objective: text);
+          await service.setGoalAndStart(widget.threadId, text);
           if (mounted) {
             ScaffoldMessenger.of(
               context,
-            ).showSnackBar(const SnackBar(content: Text('Goal set')));
+            ).showSnackBar(const SnackBar(content: Text('Goal started')));
           }
         case ComposerTool.compact:
           await service.compactThread(widget.threadId);

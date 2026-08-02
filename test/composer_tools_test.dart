@@ -45,6 +45,24 @@ void main() {
       expect(req['params'], {'threadId': 't1', 'status': 'paused'});
     });
 
+    test('setGoalAndStart records the objective and triggers a turn', () async {
+      await service.setGoalAndStart('t1', 'Ship the release');
+
+      final requests = transport.sent
+          .map((frame) => jsonDecode(frame) as Map<String, dynamic>)
+          .toList();
+      expect(requests.map((request) => request['method']), [
+        RpcMethods.threadGoalSet,
+        RpcMethods.turnStart,
+      ]);
+      expect(requests.last['params'], {
+        'threadId': 't1',
+        'input': [
+          {'type': 'text', 'text': 'Ship the release'},
+        ],
+      });
+    });
+
     test('compactThread sends thread/compact/start', () async {
       await service.compactThread('t1');
       final req = lastRequest();

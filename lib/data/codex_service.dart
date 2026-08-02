@@ -90,6 +90,17 @@ class CodexService {
     );
   }
 
+  /// Sets [objective] as the persistent goal and starts a turn with the same
+  /// text. A goal by itself only updates thread metadata; the turn is what
+  /// records the user's instruction in history and wakes the agent to work.
+  Future<Map<String, dynamic>> setGoalAndStart(
+    String threadId,
+    String objective,
+  ) async {
+    await setGoal(threadId, objective: objective);
+    return startTurn(threadId, [TextInput(objective)]);
+  }
+
   /// Clears the thread goal.
   Future<void> clearGoal(String threadId) => client.call(
     RpcMethods.threadGoalClear,
